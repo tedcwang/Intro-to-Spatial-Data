@@ -1,0 +1,211 @@
+---
+title: "Working with Spatial Data"
+author: "Theodore Wang"
+date: "8/1/2020"
+output: 
+  html_document:
+    number_sections: true
+    code_folding: show
+    toc: true
+    toc_float:
+      collapsed: TRUE
+      smooth_scroll: TRUE
+---
+
+This is the fill in the blank version of the CAFO analysis R Markdown file; it will not run properly without the correct code.
+
+# Background
+How do CAFOs affect local community mental health? Air quality? Food quality? (my choice of variables, you can choose others)
+
+Can we use previous recorded data on environmental quality (air, water) surrounding CAFOs in order to determine the overall general health of nearby communities in the future?
+
+What steps can we take to address the health issues regarding CAFOs after identifying areas with the highest concentration of hogs?
+
+North Carolina is home to numerous concentrated animal feeding operations (CAFO). Previous studies have already shown that CAFOs can cause health effects in polluting air and water; CAFO waste is known to contain harmful chemicals such as methane, ammonia, and hydrogen sulfide.
+
+# Preparation
+```{r check_packages, include = FALSE}
+# This code will install required packages if they are not already installed
+# ALWAYS INSTALL YOUR PACKAGES LIKE THIS!
+  packageList <- c("your code here")
+  for(p in packageList){
+    if (!requireNamespace(p)) {
+      install.packages(p)
+    }
+  }
+```
+
+```{r setup, message = FALSE, warning = FALSE}
+library(tidyverse)
+library(readxl)
+library(janitor)
+library("your code here")
+```
+
+# Analysis
+
+
+## Data
+
+We can load in the data sets on CAFOs and County Health; we use a specific code to download the files from an online source before reading them into R. R will check if the appropriate file exists and appropriately determine the following course of action. If the file does not exist or is not found in the right directory, R will download the file from the given source and place it into the working directory; if the file does exist and is found, R will not download any files.
+```{r download_data}
+# Download CAFO data
+if(!file.exists("./List_Of_Permitted_Animal_Facilities2019-11-06.xls")){
+  print("CAFO data file does not exist, fetching .xls file from the source")
+download.file(url = "https://files.nc.gov/ncdeq/List_Of%20Permitted_Animal_Facilities2019-11-06.xls", destfile = "./List_Of_Permitted_Animal_Facilities2019-11-06.xls")}
+
+# Download county health data
+if(!file.exists("./2018_County_Health_Rankings_North_Carolina_Data.xls")){
+  print("2018 County Health Rankings North Carolina Data file does not exist, fetching .xls file from the source")
+download.file(url = "https://www.countyhealthrankings.org/sites/default/files/media/document/state/downloads/2018%20County%20Health%20Rankings%20North%20Carolina%20Data%20-%20v3.xls", destfile = "./2018_County_Health_Rankings_North_Carolina_Data.xls")}
+```
+
+Now that we have finished downloading the files from their sources, we can read the data files and assign them to variable names to work with in R. Both of these files on CAFO data and County Health data have other Excel sheets beyond the data we want, so we specify which sheets we want and which ones we wish to skip using the "sheet" and "skip" arguments.
+```{r load_other_data}
+# Load in CAFO data
+cafoData <- read_excel("./List_Of_Permitted_Animal_Facilities2019-11-06.xls", sheet = "", skip = "")
+
+# Load in county health data
+countyHealth <- read_excel("./2018_County_Health_Rankings_North_Carolina_Data.xls", sheet = "", skip = "")
+```
+
+One more data file to download, this time regarding North Carolina Counties.
+``` {r county_data}
+# Loading in county shapefile data. This statement checks if the file is already preesent within the R project directory; if not, if will download it from the provided link and place it in the destination file
+if(!file.exists("./NC_Counties.zip")){
+  print("NC_Counties.zip does not exist, fetching zip file from the source")
+download.file(url = "https://opendata.arcgis.com/datasets/34acbf4a26784f189c9528c1cf317193_0.zip?outSR=%7B%22latestWkid%22%3A3857%2C%22wkid%22%3A102100%7D", destfile = "./NC_Counties.zip")
+}
+
+print("NC_counties.zip exists at './NC_Counties.zip'")
+
+# Cleaning shapefile data with 'sf' package
+if(!file.exists("./NC_Counties/counties.shp")){
+  print("unzipped folder and shp not detected, unzipping 'NC_Counties.zip' to './NC_counties'")
+unzip("./NC_Counties.zip",exdir = "./NC_Counties", overwrite = T)
+}
+
+ncShp <- "your code here"("./NC_Counties/counties.shp", stringsAsFactors =F)
+ncShp <- ncShp %>% clean_names(case = "snake")
+head(ncShp)
+```
+
+## Data Cleaning/Wrangling
+
+We can now begin to clean the data. 
+
+Here we clean the CAFO data, first removing rows with missing "NA" values and then selecting two data columns, "County Name" and "Allowable Count", to a variable to work with. The aggregate command subsets the data into more organized groups. "FUN" refers to function here.
+```{r clean_CAFO_data}
+# Dropping rows with missing data using "drop_na()" in CAFO data
+cafoNoNA <- drop_na(cafoData)
+cafoVariables <- cafoNoNA %>% select(c("select your own data columns")) %>% clean_names(case = "snake")
+cafoVariables <- "your code here"(allowable_count~county_name, data = cafoVariables, FUN = sum)
+head(cafoVariables)
+```
+
+We do the same thing here with the County Health data. With this data set, we only want to work with the "County" column, mentally unhealthy days column, air quality index column, and food environment index column (again, I've chosen these specific variables; you can choose different ones in your own exploration). We also renamed one column to cause less confusion.
+
+Mentally unhealthy days are measured in days. Food environment index is measured on a scale from 0 to 10, with 0 being the worst and 10 being the best. The air quality score is measured in PM2.5, a standard measurement of particles in the air; the higher the measure, the more hazy and thick the air will appear to be, and the poorer the quality of air.
+```{r clean_County_Health_data}
+# Selecting columns from County Health data; we rename a couple of iffy columns for smoother compatability and ease of use
+# add in any additional Tidyverse commands you deem necessary
+countyVariables <- countyHealth %>% select(c("your data columns here")) %>% clean_names(case = "snake")
+head(countyVariables)
+```
+
+Now that we have cleaned up our separate data sets, we can combine them into one large data set to work from. We do a little more tidying along the way, just to remove unwanted missing values present as a result of joining data frames and to reorder certain data columns.
+
+When combining data frames using 'left_join()', we have to be sure that we are not deleting any necessary rows of data. We also must make sure that data sets we wish to join have a common column between them to join them by.
+```{r join_data_frames}
+# This code combines the data frames we cleaned up earlier into one large dataframe
+finalData <- countyVariables %>% "your code here"(cafoVariables, by = "county_name")
+finalData
+
+# Reordering columns in final data frame and removing any rows with NA county names
+finalData <- finalData %>% select("county_name", "allowable_count", everything()) %>% replace_na(list("allowable_count" = 0)) %>% drop_na("county_name")
+head(finalData)
+```
+
+We can also join the spacial data from the NC_Counties data, too. 'str_to_title()' is a command that converts the case of a string. In this case, 'str_to_title()' would capitalize the first letter of every new word; other examples include 'str_to_upper()' and 'str_to_lower()' and operate following their namesake.
+```{r spatial_join}
+# Joins the spatial data frames together
+ncShpUpdate <- ncShp %>% select(name = co_name, geometry) %>%
+  mutate(name = name %>% str_to_title())
+
+# Join to finalData
+finalDataGeo <- finalData %>% rename(name = county_name) %>% left_join(ncShpUpdate, by = "name") %>% st_sf()
+finalDataGeo
+```
+'st_sf()' creates an sf object, which extends data frame objects with a feature list column. This is essential when we join in spatial data.
+
+## Results
+We can finally begin analyzing and visualizing the data!
+
+### Histogram
+Most counties don't have any allowed CAFO counts, meaning they don't have any CAFOs at all. In the histogram distribution, this is evident from the large count at the "0" mark. 
+
+Of the counties that do have a non-zero number of allowed CAFO counts, most remain under 25,000, and the majority of those under 25,000 measure under 12,500. There are a few counties with 25,000 plus CAFO counts. Most notably, there are 3 counties measuring above 50,000 counts, with one of them representing the maximum number of CAFOs at just under 100,000.
+```{r histogram_total, message = FALSE, warning = FALSE}
+finalData %>% ggplot(aes(x = allowable_count)) + geom_histogram() + labs(title = "Histogram of Allowable CAFO Counts") + theme_minimal()
+```
+
+These histograms measuring the distribution of allowable CAFO counts in each county in North Carolina show that most counties have no CAFOs; you can see this in Alamance, Cabarrus, Hyde, Pitt, and Wake County, just to name a few.
+
+There are histograms showing an abundance of CAFOs, however, most notably Bladen and Duplin County. Other counties with CAFOs include Sampson, Columbus, Edgcombe, Greene, Hertford, Jones, Northhampton, Robeson, and Scotland County.
+``` {r histogram, message = FALSE, warning = FALSE}
+finalData %>% ggplot(aes(x = allowable_count)) + geom_histogram() + labs(title = "Histogram of Allowable CAFO Counts in all Counties") + theme_minimal() + facet_wrap(~county_name)
+```
+'facet_wrap()' allows us to display the plots of every county in NC; we can choose a different variable instead of "county_name" if we like.
+
+### Scatter Plots
+In order to determine whether there is any relationship between allowable CAFO count and mental health, I constructed a scatter plot of allowable CAFO counts and measured mentally unhealthy days. The following plot shows that most high CAFO count counties have higher than average mentally unhealthy days; however, we cannot immediately attribute this to the presence of CAFOs.
+```{r scatterPlot_mental, message = FALSE, warning = FALSE}
+finalData %>% ggplot(aes(x = allowable_count, y = "your variable here")) + geom_point(color = "choose a color") + geom_smooth() + labs(title = "Your Variable vs Allowable CAFO Count of All Counties") + theme_minimal() + theme(axis.text.y = element_text(size = 6))
+```
+'geom_smooth()' applies a rudimentary regression line and model to the plot.
+
+I constructed a similar plot for air quality and whether the presence of CAFOs increases the density of particles in the air. While CAFO counties rank average in air quality score index compared to other non-CAFO counties, there are many non-CAFO counties that score higher PM2.5 levels than CAFO counties. Again, this plot is inconclusive regarding any relationship between the two variables.
+```{r scatterPlot_air, message = FALSE, warning = FALSE}
+finalData %>% ggplot(aes(x = allowable_count, y = "your variable here")) + geom_point(color = "choose a color") + geom_smooth() + labs(title = "Your Variable vs Allowable CAFO Count") + theme_minimal() + theme(axis.text.y = element_text(size = 6))
+```
+
+How about food environment index? This index measures access to healthy foods and is measured on a scale of 0 to 10, with 0 being the worst and 10 being the best. Unfortunately, this scatter plot shows no obvious relationship between poor food environment index and high CAFO counts; in fact, CAFO counties score higher food environment indexes than some non-CAFO counties!
+```{r scatterPlot_food, message = FALSE, warning = FALSE}
+finalData %>% ggplot(aes(x = allowable_count, y = "your variable here")) + geom_point(color = "choose a color") + geom_smooth() + labs(title = "Your Variable vs Allowable CAFO Count") + theme_minimal() + theme(axis.text.y = element_text(size = 6))
+```
+
+### Map Plots
+Using map plots enables us to identify, on a geo-spatial level, the locations and measurable counts of each county in North Carolina.
+
+The first map plot shows the distribution of CAFO counts in North Carolina. Most of NC is covered in dark purple, signifying that most counties have no CAFOs at all. However, there are some counties that do have CAFOs, shown in colors according to the scale.
+
+The county in bright yellow and that is impossible to ignore is Duplin County; according to this map plot, Duplin County is the home to the most allowed CAFOs in the state. It is followed by two other brightly colored counties, Scotland County (leftmost, colored green) and Bladen County (middle, green with a hint of blue). Also note the single, lone county up north (by the Virginia-North Carolina border), Rockingham County.
+```{r mapPlotOne, message = FALSE, warning = FALSE}
+finalDataGeo %>% ggplot(aes(fill = allowable_count)) + geom_sf(color=NA) + scale_fill_viridis_c() + theme_minimal() + labs(title = "Distribution of Allowable CAFO Counts in North Carolina")
+```
+We use 'geom_sf()' to create our county map using our spatial data; we follow up with 'scale_fill_viridis_c()' to fill in our county outlines with an appropriate scale.
+
+We can plot other map plots measuring the other variables to see if there are any shared distributions between them. This map plot measures the distribution of mentally unhealthy days throughout North Carolina.
+
+We can see that Duplin County does not average the highest number of mentally unhealthy days, even though it is the county with the highest allowable CAFO count. Instead, that achievement goes to Rockingham County, the lone county up north from the previous map plot. However, that is not to say that CAFO counties rank lowest in the number mentally unhealthy days; Duplin, Scotland, and Bladen County still measure above average in number of mentally unhealthy days.
+
+```{r mapPlotTwo, message = FALSE, warning = FALSE}
+finalDataGeo %>% ggplot(aes(fill = "Your variable here")) + geom_sf(color=NA) + scale_fill_viridis_c() + theme_minimal() + labs(title = "Distribution of Your Variable in North Carolina")
+```
+
+Much like we did with the number of mentally unhealthy days, we now create a map plot measuring the air quality ratings for each county. In this case, CAFO counties don't score the poorest, but don't score the best in air quality rating either. Instead, south and southwestern counties in North Carolina suffer the worst air quality in terms of particle density and presence. 
+
+Keep in mind that these measurements are scaled; on this particular plot, a high PM2.5 score above 10 doesn't necessarily mean the air is extremely toxic. On a broader scale, a PM2.5 score of 10 still measures well. Anything above a 12 or 13 represents the threshold where air quality should be questioned.
+```{r mapPlotThree, message = FALSE, warning = FALSE}
+finalDataGeo %>% ggplot(aes(fill = "Your variable here")) + geom_sf(color=NA) + scale_fill_viridis_c() + theme_minimal() + labs(title = "Distribution of Your Variable in North Carolina")
+```
+
+Finally, we come to food environment index. Remember that the food environment index measures accessibility to healthy food on a scale of 0 to 10, 0 being the worst and 10 being the best. Once again, the plot shows that CAFO counties don't necessarily score the poorest, nor do they score the best. Most CAFO counties score average or slightly above average. The onyl noticible counties that score relatively poorly are a cluster of two counties, Halifax County and Edgecombe County, and one poor county that must be starved of healthy foods: Hyde County.
+```{r mapPlotFour, message = FALSE, warning = FALSE}
+finalDataGeo %>% ggplot(aes(fill = "Your variable here")) + geom_sf(color=NA) + scale_fill_viridis_c() + theme_minimal() + labs(title = "Distribution of Your Variable in North Carolina")
+```
+
+
+## That's all!
+
+
